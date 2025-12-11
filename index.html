@@ -1,0 +1,569 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Tiger PWL</title>
+
+<!-- PWA Manifest -->
+<link rel="manifest" href="/tiger.pwl/manifest.json">
+
+<!-- Icons -->
+<link rel="icon" href="/tiger.pwl/icon-192.png">
+
+<!-- Firebase v8 -->
+<script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
+<script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-database.js"></script>
+
+<script>
+const firebaseConfig = {
+  apiKey: "AIzaSyAB_jJNoouwnRzXBZJz070CqpxZ7JWs3LU",
+  authDomain: "tiger-pwl.firebaseapp.com",
+  databaseURL: "https://tiger-pwl-default-rtdb.firebaseio.com",
+  projectId: "tiger-pwl",
+  storageBucket: "tiger-pwl.firebasestorage.app",
+  messagingSenderId: "227076305144",
+  appId: "1:227076305144:web:a8bd0c185712a0a0a00b0d"
+};
+firebase.initializeApp(firebaseConfig);
+</script>
+
+<!-- Service Worker Registration -->
+<script>
+if ("serviceWorker" in navigator) {
+  navigator.serviceWorker.register("/tiger.pwl/service-worker.js")
+    .then(() => console.log("SW registered"))
+    .catch(err => console.log("SW failed:", err));
+}
+</script>
+
+<style>
+body {
+  background: #111;
+  color: white;
+  font-family: Arial, sans-serif;
+  margin: 0;
+}
+.screen { display: none; padding: 20px; background: #a34700; min-height: 100vh; }
+.active { display: block; }
+
+.btn, .home-btn {
+  display: block;
+  width: 100%;
+  padding: 18px;
+  margin: 10px 0;
+  background: #1e1e1e;
+  border: none;
+  border-radius: 10px;
+  color: white;
+  font-size: 20px;
+}
+
+.small-input {
+  width: 48%;
+  height: 45px;
+  background: #222;
+  border: 2px solid #333;
+  color: white;
+  font-size: 16px;
+  border-radius: 6px;
+  padding-left: 8px;
+  box-sizing: border-box;
+}
+
+.attempt-input {
+  width: 48px;
+  height: 42px;
+  text-align: center;
+  font-size: 15px;
+  background: #222;
+  border: 2px solid #333;
+  border-radius: 6px;
+  color: white;
+}
+
+.good-lift { background: #16A34A !important; }
+.failed-lift { background: #DC2626 !important; }
+
+.status-btn {
+  width: 32px;
+  height: 32px;
+  border: none;
+  border-radius: 50%;
+  background: #444;
+  color: white;
+  font-size: 16px;
+}
+
+.subtotal-box, .total-box {
+  margin-left: auto;
+  min-width: 60px;
+  padding: 3px;
+  text-align: right;
+  background: white;
+  color: #ff8800;
+  border-radius: 8px;
+  font-weight: bold;
+}
+
+.fixed-header {
+  position: sticky;
+  top: 0;
+  background: #111;
+  padding: 14px;
+  text-align: center;
+  border-bottom: 3px solid #ff8800;
+  font-size: 22px;
+  font-weight: bold;
+  z-index: 10;
+}
+
+/* POPUP FIXES FOR SAFARI */
+#popupOverlay {
+  position: fixed; 
+  top:0; left:0; 
+  width:100%; height:100%;
+  background: rgba(0,0,0,0.75);
+  display: none;
+  justify-content: center;
+  align-items: center;
+  pointer-events: auto;
+  z-index: 9999;
+}
+#popupBox {
+  background:#222; 
+  padding:20px; 
+  width:80%; max-width:320px; 
+  border-radius:12px;
+  pointer-events: auto;
+}
+.popup-btn {
+  width:100%; 
+  padding:14px; 
+  margin:6px 0; 
+  border:none; 
+  border-radius:10px; 
+  color:white;
+}
+.popup-good { background:#16A34A; }
+.popup-fail { background:#DC2626; }
+
+</style>
+</head>
+
+<body>
+
+<!-- POPUP -->
+<div id="popupOverlay" onclick="closePopup()">
+  <div id="popupBox" onclick="event.stopPropagation()">
+    <h3>Was this lift good or failed?</h3>
+    <button id="btnPopupGood" class="popup-btn popup-good">GOOD</button>
+    <button id="btnPopupFail" class="popup-btn popup-fail">FAILED</button>
+  </div>
+</div>
+
+<!-- HOME -->
+<div id="home" class="screen active">
+  <h1 style="text-align:center;">Tiger PWL</h1>
+  <button id="btnStartNewMeet" class="home-btn">Start New Meet</button>
+  <button id="btnLoadOld" class="home-btn">Load Old Meets</button>
+  <button id="btnOpenCompetitors" class="home-btn">Competitors</button>
+</div>
+
+<!-- MEET SETUP -->
+<div id="meetSetup" class="screen">
+  <h2>Meet Setup</h2>
+
+  <input id="meetNameInput" class="small-input" style="width:100%;" placeholder="Meet Name"><br><br>
+  <input id="meetIdInput" class="small-input" style="width:100%;" placeholder="Meet ID (no spaces)"><br><br>
+
+  <button id="btnFemaleMeet" class="btn">Female Meet</button>
+  <button id="btnMaleMeet" class="btn">Male Meet</button>
+
+  <button id="btnBackFromSetup" class="btn">Back</button>
+</div>
+
+<!-- ENTER LIFTERS -->
+<div id="enterLifters" class="screen">
+  <h2>Enter Lifters</h2>
+  <div id="lifterList"></div>
+
+  <button id="btnAddLifter" class="btn">Add Lifter</button>
+  <button id="btnCreateMeet" class="btn">Create Meet Sheet</button>
+  <button id="btnBackFromLifters" class="btn">Back</button>
+</div>
+
+<!-- MEET SHEET -->
+<div id="meetSheet" class="screen">
+  <div class="fixed-header" id="meetHeader">Tiger PWL</div>
+  <div id="meetRows"></div>
+
+  <button id="btnSaveMeet" class="btn">Save Meet</button>
+  <button id="btnMeetHome" class="btn">Home</button>
+</div>
+
+<!-- COMPETITORS -->
+<div id="competitors" class="screen">
+  <h2>Competitors</h2>
+  <div id="competitorRows"></div>
+  <button id="btnCompetitorsBack" class="btn">Back</button>
+</div>
+
+<!-- LOAD MEETS -->
+<div id="loadMeet" class="screen">
+  <h2>Saved Meets</h2>
+  <div id="loadList"></div>
+  <button id="btnLoadBack" class="btn">Back</button>
+</div>
+
+<script>
+/* GLOBAL STATE */
+let meetName="", meetId="", meetGender="";
+let lifters=[];
+let competitorData=[];
+let currentAttempt=null;
+
+const FEMALE_CLASSES=["97","105","114","123","132","148","165","181","198","220","242","242+"];
+const MALE_CLASSES=["114","123","132","148","165","181","198","220","242","275","308","SHW"];
+
+/* SCREEN CONTROL */
+function showScreen(id){
+  document.querySelectorAll(".screen").forEach(s=>s.classList.remove("active"));
+  document.getElementById(id).classList.add("active");
+}
+
+/* MEET SETUP */
+function handleSelectGender(gender){
+  meetGender=gender;
+  meetName=document.getElementById("meetNameInput").value.trim();
+  meetId=document.getElementById("meetIdInput").value.trim();
+
+  if(!meetName || !meetId){
+    alert("Enter meet name and meet ID first.");
+    return;
+  }
+
+  lifters=[];
+  document.getElementById("lifterList").innerHTML="";
+
+  activateRealtimeSync();
+  showScreen("enterLifters");
+}
+
+/* LIFTER ENTRY */
+function addLifter(){
+  if(lifters.length>=12){ alert("Max 12 lifters."); return; }
+
+  lifters.push({
+    name:"", num:"", rack:"", weightClass:"",
+    sq:["","",""], be:["","",""], dl:["","",""],
+    good:{sq:[null,null,null], be:[null,null,null], dl:[null,null,null]}
+  });
+  renderLifterEntry();
+}
+
+function renderLifterEntry(){
+  const classes=meetGender==="female"?FEMALE_CLASSES:MALE_CLASSES;
+  const list=document.getElementById("lifterList");
+  list.innerHTML="";
+
+  lifters.forEach((L,i)=>{
+    list.innerHTML+=`
+      <div class="lifter-entry-block">
+        <input class="small-input" placeholder="Name"
+          onchange="lifters[${i}].name=this.value" value="${L.name}">
+        <input class="small-input" placeholder="Lifter #"
+          onchange="lifters[${i}].num=this.value" value="${L.num}">
+        <br><br>
+        <input class="small-input" placeholder="Rack"
+          onchange="lifters[${i}].rack=this.value" value="${L.rack}">
+        <select class="small-input"
+          onchange="lifters[${i}].weightClass=this.value">
+          <option value="">Weight Class</option>
+          ${classes.map(w=>`<option value="${w}" ${L.weightClass===w?'selected':''}>${w}</option>`).join("")}
+        </select>
+      </div>
+    `;
+  });
+}
+
+/* MEET SHEET */
+function createMeet(){
+  if(lifters.length===0){ alert("Add at least one lifter."); return; }
+  document.getElementById("meetHeader").textContent=meetName;
+  renderMeetSheet();
+  showScreen("meetSheet");
+}
+
+function renderMeetSheet(){
+  const rows=document.getElementById("meetRows");
+  rows.innerHTML="";
+  lifters.forEach((L,i)=>{
+    rows.innerHTML+=buildLifterRow(i,L);
+    updateTotals(i);
+  });
+}
+
+function buildLifterRow(i,L){
+  return `
+  <div class="lifter-row">
+    <div class="row-header">
+      ${L.name||("Lifter "+(i+1))} ${L.num?`(#${L.num})`:""} 
+      ${L.rack?` - Rack ${L.rack}`:""} 
+      ${L.weightClass?` - ${L.weightClass}`:""}
+    </div>
+
+    <div class="attempt-row">
+      ${attemptInput(i,"sq",0,L)}
+      ${attemptInput(i,"sq",1,L)}
+      ${attemptInput(i,"sq",2,L)}
+    </div>
+
+    <div class="attempt-row">
+      ${attemptInput(i,"be",0,L)}
+      ${attemptInput(i,"be",1,L)}
+      ${attemptInput(i,"be",2,L)}
+      <div class="subtotal-box" id="sub${i}">0</div>
+    </div>
+
+    <div class="attempt-row">
+      ${attemptInput(i,"dl",0,L)}
+      ${attemptInput(i,"dl",1,L)}
+      ${attemptInput(i,"dl",2,L)}
+      <div class="total-box" id="total${i}">0</div>
+    </div>
+  </div>`;
+}
+
+function attemptInput(i,t,j,L){
+  const v=L[t][j];
+  const f=L.good[t][j];
+  const cls=f===true?"good-lift":f===false?"failed-lift":"";
+  const icon=f===true?"✓":f===false?"X":"?";
+
+  return `
+    <input class="attempt-input ${cls}" value="${v}"
+      oninput="attemptEntered(${i},'${t}',${j},this.value)">
+    <button class="status-btn" onclick="editLift(${i},'${t}',${j})">${icon}</button>
+  `;
+}
+
+function attemptEntered(i,t,j,v){
+  lifters[i][t][j]=v;
+  currentAttempt={i,t,j};
+  openPopup();
+}
+function editLift(i,t,j){
+  currentAttempt={i,t,j};
+  openPopup();
+}
+
+function openPopup(){
+  document.getElementById("popupOverlay").style.display="flex";
+}
+function closePopup(){
+  document.getElementById("popupOverlay").style.display="none";
+  currentAttempt=null;
+}
+
+/* SAFARI-COMPATIBLE POPUP ACTIONS */
+function confirmGood(){
+  setLift(true);
+  setTimeout(closePopup,50);
+}
+function confirmFail(){
+  setLift(false);
+  setTimeout(closePopup,50);
+}
+
+/* UPDATE LIFTER AFTER POPUP */
+function setLift(flag){
+  const {i,t,j}=currentAttempt;
+  lifters[i].good[t][j]=flag;
+  updateTotals(i);
+  saveMeet();
+  renderMeetSheet();
+}
+
+/* TOTALS */
+function updateTotals(i){
+  const L=lifters[i];
+  const best=(vals,flags)=>Math.max(...vals.map((v,j)=>flags[j]===true?(Number(v)||0):0));
+
+  const sq=best(L.sq,L.good.sq);
+  const be=best(L.be,L.good.be);
+  const dl=best(L.dl,L.good.dl);
+
+  document.getElementById(`sub${i}`).textContent=sq+be;
+  document.getElementById(`total${i}`).textContent=sq+be+dl;
+}
+
+/* FIREBASE SYNC */
+function saveMeet(){
+  if(!meetId) return;
+  firebase.database().ref("meets/"+meetId).set({
+    meetName, meetGender, lifters
+  });
+}
+
+function loadMeetList(){
+  const list=document.getElementById("loadList");
+  list.innerHTML="";
+
+  firebase.database().ref("meets").once("value",snap=>{
+    snap.forEach(child=>{
+      const key=child.key;
+      const d=child.val();
+
+      const btn=document.createElement("button");
+      btn.className="btn";
+      btn.textContent=`${d.meetName} (${key})`;
+      btn.onclick=()=>loadMeet(key);
+
+      list.appendChild(btn);
+    });
+  });
+
+  showScreen("loadMeet");
+}
+
+function loadMeet(key){
+  firebase.database().ref("meets/"+key).once("value",snap=>{
+    const d=snap.val();
+    meetId=key;
+    meetName=d.meetName;
+    meetGender=d.meetGender;
+    lifters=d.lifters||[];
+
+    document.getElementById("meetHeader").textContent=meetName;
+
+    activateRealtimeSync();
+    renderMeetSheet();
+    showScreen("meetSheet");
+  });
+}
+
+function activateRealtimeSync(){
+  if(!meetId) return;
+  firebase.database().ref("meets/"+meetId).on("value",snap=>{
+    const d=snap.val();
+    if(!d) return;
+    lifters=d.lifters||[];
+    renderMeetSheet();
+  });
+}
+
+/* COMPETITORS */
+function openCompetitors(){
+  competitorData=Array.from({length:12},()=>({
+    sq:["","",""], be:["","",""], dl:["","",""],
+    good:{sq:[null,null,null],be:[null,null,null],dl:[null,null,null]}
+  }));
+  renderCompetitors();
+  showScreen("competitors");
+}
+
+function renderCompetitors(){
+  const rows=document.getElementById("competitorRows");
+  rows.innerHTML="";
+
+  competitorData.forEach((L,i)=>{
+    rows.innerHTML+=`
+    <div class="lifter-row">
+      <div class="row-header">Competitor ${i+1}</div>
+
+      <div class="attempt-row">
+        ${competitorInput(i,"sq",0,L)}
+        ${competitorInput(i,"sq",1,L)}
+        ${competitorInput(i,"sq",2,L)}
+      </div>
+
+      <div class="attempt-row">
+        ${competitorInput(i,"be",0,L)}
+        ${competitorInput(i,"be",1,L)}
+        ${competitorInput(i,"be",2,L)}
+        <div class="subtotal-box" id="csub${i}">0</div>
+      </div>
+
+      <div class="attempt-row">
+        ${competitorInput(i,"dl",0,L)}
+        ${competitorInput(i,"dl",1,L)}
+        ${competitorInput(i,"dl",2,L)}
+        <div class="total-box" id="ctotal${i}">0</div>
+      </div>
+    </div>`;
+    updateCompetitorTotals(i);
+  });
+}
+
+function competitorInput(i,t,j,L){
+  const v=L[t][j];
+  const f=L.good[t][j];
+  const cls=f===true?"good-lift":f===false?"failed-lift":"";
+  const icon=f===true?"✓":f===false?"X":"?";
+
+  return `
+    <input class="attempt-input ${cls}" value="${v}"
+      oninput="competitorValue(${i},'${t}',${j},this.value)">
+    <button class="status-btn" onclick="competitorFlag(${i},'${t}',${j})">${icon}</button>
+  `;
+}
+
+function competitorValue(i,t,j,v){
+  competitorData[i][t][j]=v;
+  currentAttempt={competitor:true,i,t,j};
+  openPopup();
+}
+
+function competitorFlag(i,t,j){
+  currentAttempt={competitor:true,i,t,j};
+  openPopup();
+}
+
+function updateCompetitorTotals(i){
+  const L=competitorData[i];
+  const best=(vals,flags)=>Math.max(...vals.map((v,j)=>flags[j]===true?(Number(v)||0):0));
+
+  const sq=best(L.sq,L.good.sq);
+  const be=best(L.be,L.good.be);
+  const dl=best(L.dl,L.good.dl);
+
+  document.getElementById(`csub${i}`).textContent=sq+be;
+  document.getElementById(`ctotal${i}`).textContent=sq+be+dl;
+}
+
+/* INIT */
+function init(){
+  document.getElementById("btnStartNewMeet").onclick=()=>showScreen("meetSetup");
+  document.getElementById("btnLoadOld").onclick=loadMeetList;
+  document.getElementById("btnOpenCompetitors").onclick=openCompetitors;
+
+  document.getElementById("btnFemaleMeet").onclick=()=>handleSelectGender("female");
+  document.getElementById("btnMaleMeet").onclick=()=>handleSelectGender("male");
+  document.getElementById("btnBackFromSetup").onclick=()=>showScreen("home");
+
+  document.getElementById("btnAddLifter").onclick=addLifter;
+  document.getElementById("btnCreateMeet").onclick=createMeet;
+  document.getElementById("btnBackFromLifters").onclick=()=>showScreen("home");
+
+  document.getElementById("btnSaveMeet").onclick=saveMeet;
+  document.getElementById("btnMeetHome").onclick=()=>showScreen("home");
+
+  document.getElementById("btnLoadBack").onclick=()=>showScreen("home");
+
+  document.getElementById("btnCompetitorsBack").onclick=()=>showScreen("home");
+
+  document.getElementById("btnPopupGood").onclick=confirmGood;
+  document.getElementById("btnPopupFail").onclick=confirmFail;
+
+  window.attemptEntered=attemptEntered;
+  window.editLift=editLift;
+  window.competitorValue=competitorValue;
+  window.competitorFlag=competitorFlag;
+}
+
+window.addEventListener("load", init);
+
+</script>
+</body>
+</html>
